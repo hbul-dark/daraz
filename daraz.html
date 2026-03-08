@@ -1,0 +1,144 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Daraz Full Catalog Scraper</title>
+    <style>
+        body { font-family: 'Segoe UI', sans-serif; padding: 20px; background: #f0f2f5; }
+        .container { max-width: 1100px; margin: auto; background: white; padding: 25px; border-radius: 12px; box-shadow: 0 5px 15px rgba(0,0,0,0.08); }
+        .search-box { display: flex; gap: 10px; margin-bottom: 20px; }
+        input { flex-grow: 1; padding: 12px; border: 2px solid #ddd; border-radius: 6px; font-size: 16px; }
+        button { padding: 12px 24px; background: #ff6801; color: white; border: none; border-radius: 6px; cursor: pointer; font-weight: bold; }
+        button:disabled { background: #ccc; }
+        #status { margin: 10px 0; font-weight: bold; color: #555; }
+        .stats-bar { display: flex; justify-content: space-between; margin-bottom: 10px; font-size: 0.9em; color: #666; }
+        table { width: 100%; border-collapse: collapse; margin-top: 10px; }
+        th, td { border: 1px solid #eee; padding: 12px; text-align: left; }
+        th { background-color: #ff6801; color: white; position: sticky; top: 0; }
+        tr:hover { background-color: #fff9f5; }
+        .price { color: #f57224; font-weight: bold; }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <h2>Daraz Deep Scraper</h2>
+    <p>This tool created by Razzak <strong>every available page</strong> until no more items are found.</p>
+    
+    <div class="search-box">
+        <input type="text" id="searchTerm" placeholder="Search for products (e.g. 'Realme')...">
+        <button id="btnSearch" onclick="fetchAllPages()">Start Deep Search</button>
+    </div>
+
+    <div class="stats-bar">
+        <span id="pageCount">Pages scanned: 0</span>
+        <span id="itemCount">Items found: 0</span>
+    </div>
+    <div id="status">Ready</div>
+
+    <table id="resultsTable">
+        <thead>
+            <tr>
+                <th>Product Name</th>
+                <th>Price</th>
+                <th>Seller</th>
+                <th>Sold</th>
+            </tr>
+        </thead>
+        <tbody id="resultsBody"></tbody>
+    </table>
+</div>
+
+<script>
+function cleanPrice(priceStr) {
+    if (!priceStr) return 0;
+    // Implementation matching Python's re.sub(r'[^\d.]', '', price_str)
+    const numeric = priceStr.replace(/[^\d.]/g, '');
+    return parseFloat(numeric) || 0;
+}
+
+async function fetchAllPages() {
+    const product = document.getElementById('searchTerm').value;
+    const btn = document.getElementById('btnSearch');
+    const status = document.getElementById('status');
+    const tableBody = document.getElementById('resultsBody');
+    
+    if (!product) return alert("Please enter a product name");
+
+    // Reset UI
+    btn.disabled = true;
+    tableBody.innerHTML = '';
+    let allProducts = [];
+    let currentPage = 1;
+    let keepSearching = true;
+
+    while (keepSearching) {
+        status.innerText = `Searching page ${currentPage}...`;
+        document.getElementById('pageCount').innerText = `Pages scanned: ${currentPage}`;
+
+        // Using a CORS proxy to bypass browser security restrictions
+        const targetUrl = `https://www.daraz.com.bd/catalog/?ajax=true&page=${currentPage}&q=${encodeURIComponent(product)}`;
+        const proxyUrl = `https://api.allorigins.win/get?url=${encodeURIComponent(targetUrl)}`;
+
+        try {
+            const response = await fetch(proxyUrl);
+            const wrapper = await response.json();
+            const data = JSON.parse(wrapper.contents);
+            
+            // Extract items matching Python path: data.get('mods', {}).get('listItems', [])
+            const items = data.mods?.listItems || [];
+
+            if (items.length === 0) {
+                status.innerText = "No more products found. Sorting results...";
+                keepSearching = false;
+                break;
+            }
+
+            items.forEach(item => {
+                const rawPrice = item.priceShow || '0';
+                allProducts.push({
+                    name: item.name || 'N/A',
+                    price_display: rawPrice,
+                    price_numeric: cleanPrice(rawPrice), // For sorting
+                    seller: item.sellerName || 'N/A',
+                    sold: item.itemSoldCntShow || '0 sold'
+                });
+            });
+
+            document.getElementById('itemCount').innerText = `Items found: ${allProducts.length}`;
+            
+            currentPage++;
+            // Small delay to mimic Python's time.sleep(1) to avoid rate limits
+            await new Promise(r => setTimeout(r, 500)); 
+
+        } catch (error) {
+            console.error("Fetch error:", error);
+            status.innerText = "Error encountered or rate-limited. Stopping.";
+            keepSearching = false;
+        }
+        
+        // Safety cap to prevent infinite loops (Optional)
+        if (currentPage > 50) keepSearching = false;
+    }
+
+    // Sort by price (Lowest to Highest)
+    allProducts.sort((a, b) => a.price_numeric - b.price_numeric);
+
+    // Display results
+    tableBody.innerHTML = allProducts.map(p => `
+        <tr>
+            <td>${p.name}</td>
+            <td class="price">${p.price_display}</td>
+            <td>${p.seller}</td>
+            <td>${p.sold}</td>
+        </tr>
+    `).join('');
+
+    status.innerText = `Finished! Processed ${allProducts.length} items.`;
+    btn.disabled = false;
+}
+</script>
+
+</body>
+</html>
